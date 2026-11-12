@@ -119,6 +119,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   // Push Notifications
   const [pushEnabled, setPushEnabled] = useState(true);
+  const [vapidFromEnv, setVapidFromEnv] = useState(false);
+  const [notifyOnAdd, setNotifyOnAdd] = useState(true);
   const [subscribersCount, setSubscribersCount] = useState(0);
   const [pushHistory, setPushHistory] = useState<PushNotificationHistoryItem[]>([]);
   const [pushTotals, setPushTotals] = useState({ campaigns: 0, delivered: 0, failed: 0 });
@@ -149,6 +151,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       if (pushRes.ok) {
         const pushData = await pushRes.json();
         setPushEnabled(Boolean(pushData.enabled));
+        setVapidFromEnv(Boolean(pushData.vapidFromEnv));
         setSubscribersCount(Number(pushData.subscribersCount || 0));
         setPushHistory(Array.isArray(pushData.history) ? pushData.history : []);
         if (pushData.totals) setPushTotals(pushData.totals);
@@ -304,11 +307,25 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
 
     try {
-      await fetch('/api/admin/catalog', {
+      const res = await fetch('/api/admin/catalog', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item: savedItem }),
+        body: JSON.stringify({
+          item: savedItem,
+          notifySubscribers: !editingMedia && notifyOnAdd,
+        }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pushReport?.entry) {
+          setStatusBanner(
+            `« ${savedItem.title} » ajouté — notification push envoyée (${data.pushReport.entry.deliveredCount}/${data.pushReport.entry.targetedCount} abonné(s)).`
+          );
+          loadAdminServerData();
+        } else if (!editingMedia) {
+          setStatusBanner(`« ${savedItem.title} » ajouté au catalogue.`);
+        }
+      }
     } catch {
       // ignore
     }
@@ -906,6 +923,29 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </div>
           </div>
 
+          {/* VAPID Environment Status & Auto-Notification Banner */}
+          <div className="bg-[#12101d] border border-white/8 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="space-y-0.5">
+              <p className="font-semibold text-white">
+                {vapidFromEnv
+                  ? 'Clés VAPID chargées depuis les variables d’environnement serveur'
+                  : 'Clés VAPID actives (persistantes côté serveur · surchargeables via VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)'}
+              </p>
+              <p className="text-zinc-400">
+                Chaque nouveau film ou série ajouté depuis le catalogue envoie automatiquement une notification push aux abonnés.
+              </p>
+            </div>
+            <span
+              className={`px-2.5 py-1 rounded-lg font-semibold shrink-0 w-fit ${
+                vapidFromEnv
+                  ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-purple-950/70 text-purple-200 border border-purple-500/30'
+              }`}
+            >
+              {vapidFromEnv ? 'ENV VAPID actif' : 'VAPID auto-généré'}
+            </span>
+          </div>
+
           {/* Send Push Campaign Form */}
           <form onSubmit={handleSendPush} className="bg-[#12101d] border border-purple-900/35 rounded-2xl p-5 sm:p-6 space-y-4 text-xs">
             <div className="flex items-center justify-between">
@@ -1434,6 +1474,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               onChange={(e) => setMediaFormData({ ...mediaFormData, videoUrl: e.target.value })}
               className="w-full bg-[#090810] border border-white/12 rounded-xl p-2.5 text-white font-mono"
             />
+            {!editingMedia && (
+              <label className="flex items-center gap-2 text-zinc-200 bg-purple-950/30 border border-purple-500/25 rounded-xl p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyOnAdd}
+                  onChange={(e) => setNotifyOnAdd(e.target.checked)}
+                  className="accent-purple-500 w-4 h-4"
+                />
+                <span>Notifier automatiquement les abonnés par Push Web lors de l’ajout</span>
+              </label>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setShowMediaForm(false)} className="px-4 py-2 bg-white/8 rounded-xl">
                 Annuler

@@ -920,7 +920,7 @@ async function startServer() {
   app.get('/api/push/vapid-public-key', (_req, res) => {
     res.json({
       enabled: store.pushEnabled,
-      publicKey: store.vapid.publicKey,
+      publicKey: process.env.VAPID_PUBLIC_KEY || store.vapid.publicKey,
     });
   });
 
@@ -972,54 +972,36 @@ async function startServer() {
     res.json({ ok: true, subscribersCount: store.pushSubscriptions.length });
   });
 
-  // --- Web Push Admin Endpoints ---
-  app.get('/api/admin/push', requireAdmin, (_req, res) => {
-    const totalDelivered = store.pushHistory.reduce((acc, h) => acc + h.deliveredCount, 0);
-    const totalFailed = store.pushHistory.reduce((acc, h) => acc + h.failedCount, 0);
-    res.json({
-      enabled: store.pushEnabled,
-      subscribersCount: store.pushSubscriptions.length,
-      vapidPublicKey: store.vapid.publicKey,
-      history: store.pushHistory,
-      totals: {
-        campaigns: store.pushHistory.length,
-        delivered: totalDelivered,
-        failed: totalFailed,
-      },
-    });
-  });
+  const isVapidConfiguredFromEnv = Boolean(
+    process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY
+  );
 
-  app.post('/api/admin/push/toggle', requireAdmin, (req, res) => {
-    const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : !store.pushEnabled;
-    store.pushEnabled = enabled;
-    saveStore();
-    res.json({ ok: true, enabled: store.pushEnabled });
-  });
-
-  app.post('/api/admin/push/send', requireAdmin, async (req, res) => {
-    if (!store.pushEnabled) {
-      res.status(400).json({ error: 'Activez d’abord le système de notifications push.' });
-      return;
-    }
-    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
-    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-    const image = typeof req.body?.image === 'string' ? req.body.image.trim() : '';
-    const link = typeof req.body?.link === 'string' ? req.body.link.trim() : '/';
-    const sound = req.body?.sound !== false;
-
-    if (!title || !message) {
-      res.status(400).json({ error: 'Titre et message requis pour envoyer la notification.' });
-      return;
-    }
+  async function broadcastPushNotification(opts: {
+    title: string;
+    message: string;
+    image?: string;
+    link?: string;
+    sound?: boolean;
+    tag?: string;
+    mediaType?: 'movie' | 'tv' | 'episode';
+    mediaId?: string | number;
+  }) {
+    const activePublicKey = process.env.VAPID_PUBLIC_KEY || store.vapid.publicKey;
+    const activePrivateKey = process.env.VAPID_PRIVATE_KEY || store.vapid.privateKey;
+    const activeSubject = process.env.VAPID_SUBJECT || store.vapid.subject;
+    webpush.setVapidDetails(activeSubject, activePublicKey, activePrivateKey);
 
     const payload = JSON.stringify({
-      title,
-      body: message,
-      message,
-      image: image || undefined,
+      title: opts.title,
+      body: opts.message,
+      message: opts.message,
+      image: opts.image || undefined,
       icon: '/pwa-192x192.png',
-      url: link || '/',
-      sound,
+      url: opts.link || '/',
+      sound: opts.sound !== false,
+      tag: opts.tag,
+      mediaType: opts.mediaType,
+      mediaId: opts.mediaId,
     });
 
     const targets = [...store.pushSubscriptions];
@@ -1055,10 +1037,10 @@ async function startServer() {
 
     const entry: PushHistoryRecord = {
       id: `push_${Date.now()}`,
-      title,
-      message,
-      image: image || undefined,
-      link: link || '/',
+      title: opts.title,
+      message: opts.message,
+      image: opts.image || undefined,
+      link: opts.link || '/',
       sentAt: new Date().toISOString(),
       targetedCount: targets.length,
       deliveredCount,
@@ -1070,11 +1052,65 @@ async function startServer() {
     }
     saveStore();
 
-    res.json({
-      ok: true,
+    return {
       entry,
       cleanedExpired: expiredEndpoints.size,
       subscribersCount: store.pushSubscriptions.length,
+    };
+  }
+
+  // --- Web Push Admin Endpoints ---
+  app.get('/api/admin/push', requireAdmin, (_req, res) => {
+    const totalDelivered = store.pushHistory.reduce((acc, h) => acc + h.deliveredCount, 0);
+    const totalFailed = store.pushHistory.reduce((acc, h) => acc + h.failedCount, 0);
+    res.json({
+      enabled: store.pushEnabled,
+      subscribersCount: store.pushSubscriptions.length,
+      vapidPublicKey: process.env.VAPID_PUBLIC_KEY || store.vapid.publicKey,
+      vapidFromEnv: isVapidConfiguredFromEnv,
+      history: store.pushHistory,
+      totals: {
+        campaigns: store.pushHistory.length,
+        delivered: totalDelivered,
+        failed: totalFailed,
+      },
+    });
+  });
+
+  app.post('/api/admin/push/toggle', requireAdmin, (req, res) => {
+    const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : !store.pushEnabled;
+    store.pushEnabled = enabled;
+    saveStore();
+    res.json({ ok: true, enabled: store.pushEnabled });
+  });
+
+  app.post('/api/admin/push/send', requireAdmin, async (req, res) => {
+    if (!store.pushEnabled) {
+      res.status(400).json({ error: 'Activez d’abord le système de notifications push.' });
+      return;
+    }
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    const image = typeof req.body?.image === 'string' ? req.body.image.trim() : '';
+    const link = typeof req.body?.link === 'string' ? req.body.link.trim() : '/';
+    const sound = req.body?.sound !== false;
+
+    if (!title || !message) {
+      res.status(400).json({ error: 'Titre et message requis pour envoyer la notification.' });
+      return;
+    }
+
+    const result = await broadcastPushNotification({
+      title,
+      message,
+      image: image || undefined,
+      link: link || '/',
+      sound,
+    });
+
+    res.json({
+      ok: true,
+      ...result,
     });
   });
 
@@ -1122,20 +1158,52 @@ async function startServer() {
     res.json({ items: store.customMedia });
   });
 
-  app.post('/api/admin/catalog', requireAdmin, (req, res) => {
+  app.post('/api/admin/catalog', requireAdmin, async (req, res) => {
     const item = req.body?.item;
     if (!item || !item.id) {
       res.status(400).json({ error: 'Contenu invalide.' });
       return;
     }
     const idx = store.customMedia.findIndex((m) => String(m.id) === String(item.id));
+    const isNewItem = idx < 0;
     if (idx >= 0) {
       store.customMedia[idx] = item;
     } else {
       store.customMedia.unshift(item);
     }
     saveStore();
-    res.json({ ok: true, items: store.customMedia });
+
+    let pushReport: Awaited<ReturnType<typeof broadcastPushNotification>> | null = null;
+    const shouldNotify = isNewItem && req.body?.notifySubscribers !== false && store.pushEnabled;
+    if (shouldNotify && store.pushSubscriptions.length > 0) {
+      const slug = slugify(String(item.title || ''));
+      const prefix = item.type === 'tv' ? '/series/' : '/movie/';
+      const directUrl = `${prefix}${item.id}${slug ? `-${slug}` : ''}`;
+      const labelPrefix = item.type === 'tv' ? 'Nouvelle série ajoutée' : 'Nouveau film ajouté';
+      const yearTag = item.releaseYear ? ` (${item.releaseYear})` : '';
+
+      pushReport = await broadcastPushNotification({
+        title: `${labelPrefix} : ${item.title}${yearTag}`,
+        message: String(item.synopsis || 'Découvrez la fiche complète et la bande-annonce sur STREAMORA.').slice(0, 150),
+        image: typeof item.backdrop === 'string' && item.backdrop.startsWith('http')
+          ? item.backdrop
+          : typeof item.poster === 'string' && item.poster.startsWith('http')
+          ? item.poster
+          : undefined,
+        link: directUrl,
+        sound: true,
+        tag: `streamora-new-${item.id}`,
+        mediaType: item.type === 'tv' ? 'tv' : 'movie',
+        mediaId: item.id,
+      });
+    }
+
+    res.json({
+      ok: true,
+      isNew: isNewItem,
+      items: store.customMedia,
+      pushReport,
+    });
   });
 
   app.delete('/api/admin/catalog/:id', requireAdmin, (req, res) => {

@@ -96,6 +96,19 @@ export function usePushNotifications() {
     checkStatus();
   }, [checkStatus]);
 
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'STREAMORA_PUSH_RECEIVED') {
+        if (soundEnabled && event.data?.payload?.sound !== false) {
+          playNotificationChime();
+        }
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+  }, [soundEnabled]);
+
   const subscribe = useCallback(async (): Promise<boolean> => {
     setErrorMsg(null);
     if (!supported) {
