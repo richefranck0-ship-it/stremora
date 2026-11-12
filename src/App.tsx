@@ -91,6 +91,17 @@ export default function App() {
     [navigateToPath]
   );
 
+  useEffect(() => {
+    const onCustomNavigate = (e: Event) => {
+      const targetTab = (e as CustomEvent<ActiveTab>).detail;
+      if (targetTab) {
+        navigateToTab(targetTab);
+      }
+    };
+    window.addEventListener('streamora-navigate', onCustomNavigate);
+    return () => window.removeEventListener('streamora-navigate', onCustomNavigate);
+  }, [navigateToTab]);
+
   const navigateToMedia = useCallback(
     (media: MediaItem) => {
       navigateToPath(getMediaPath(media));

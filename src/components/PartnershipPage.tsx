@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Megaphone, Send, Check, AlertCircle, Monitor, Smartphone, PlayCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Megaphone, Send, Check, AlertCircle, Monitor, Smartphone, PlayCircle, Mail } from 'lucide-react';
 import { useSeoMeta } from '../utils/seo';
 import { getCurrentLang, getSeoRouteCopy } from '../utils/i18n';
 
@@ -12,6 +12,16 @@ export const PartnershipPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ownerContactEmail, setOwnerContactEmail] = useState('');
+
+  useEffect(() => {
+    fetch('/api/app-config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.contactEmail) setOwnerContactEmail(String(data.contactEmail));
+      })
+      .catch(() => {});
+  }, []);
 
   const activeLang = getCurrentLang();
   const seoCopy = getSeoRouteCopy('partenariat', activeLang);
@@ -96,7 +106,7 @@ export const PartnershipPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 flex flex-wrap items-center gap-3">
             <button
               onClick={scrollToForm}
               className="px-6 min-h-[46px] bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm rounded-xl inline-flex items-center gap-2 shadow-lg shadow-purple-950/60 transition-colors"
@@ -104,6 +114,15 @@ export const PartnershipPage: React.FC = () => {
               <Send className="w-4 h-4" />
               <span>Nous contacter</span>
             </button>
+            {ownerContactEmail && (
+              <a
+                href={`mailto:${ownerContactEmail}?subject=${encodeURIComponent('Demande publicitaire STREAMORA')}`}
+                className="px-5 min-h-[46px] bg-white/8 hover:bg-white/15 border border-white/15 text-white font-semibold text-sm rounded-xl inline-flex items-center gap-2 transition-colors"
+              >
+                <Mail className="w-4 h-4 text-purple-300" />
+                <span>{ownerContactEmail}</span>
+              </a>
+            )}
           </div>
         </div>
       </section>

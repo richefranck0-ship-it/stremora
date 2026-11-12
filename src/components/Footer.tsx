@@ -2,6 +2,7 @@ import React from 'react';
 import { Globe } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { ALL_LOCALE_LIST, getCurrentLang, getLocalizedPath } from '../utils/i18n';
+import { ApkDownloadButton } from './ApkDownloadButton';
 
 interface FooterProps {
   onNavigate: (tab: ActiveTab) => void;
@@ -79,6 +80,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               </li>
               <li>
                 <span>Application installable (PWA)</span>
+              </li>
+              <li className="pt-1.5">
+                <ApkDownloadButton variant="footer" />
               </li>
             </ul>
           </div>

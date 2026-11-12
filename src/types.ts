@@ -175,6 +175,18 @@ export interface PartnershipInquiry {
   status: 'new' | 'reviewed';
 }
 
+export interface AppConfig {
+  apkUrl: string;
+  apkVersion: string;
+  apkLabel: string;
+  apkEnabled: boolean;
+  apkDownloads: number;
+  ownerNotificationEmail: string;
+  ownerNotificationWebhook?: string;
+  adsTxtContent: string;
+  adNetworkHeadCode: string;
+}
+
 export type ActiveTab =
   | 'home'
   | 'direct'

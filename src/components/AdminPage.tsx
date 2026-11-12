@@ -3,11 +3,11 @@ import {
   Shield, Key, Lock, Plus, Trash2, Edit3, Star, BarChart3,
   Megaphone, Film, ExternalLink, Check, AlertCircle, RefreshCw, Eye,
   MousePointerClick, Radio, RotateCcw, Bell, Send, LogOut, ArrowLeft, Tv, Users,
-  Smartphone, Monitor, Tablet, Globe
+  Smartphone, Monitor, Tablet, Globe, Mail, Download, Copy
 } from 'lucide-react';
 import {
   MediaItem, AdBanner, TrafficStats, ContentReport, AdPlacement,
-  LiveStreamChannel, PushNotificationHistoryItem, PartnershipInquiry, Season
+  LiveStreamChannel, PushNotificationHistoryItem, PartnershipInquiry, Season, AppConfig
 } from '../types';
 import { storageService } from '../services/storageService';
 import { tmdbService } from '../services/tmdbService';
@@ -24,6 +24,7 @@ type AdminTab =
   | 'content'
   | 'direct'
   | 'ads'
+  | 'apk'
   | 'push'
   | 'traffic'
   | 'reports'
@@ -116,6 +117,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     badgeText: 'Publicité',
   });
   const [partnerships, setPartnerships] = useState<PartnershipInquiry[]>([]);
+  const [appConfig, setAppConfig] = useState<AppConfig>({
+    apkUrl: '',
+    apkVersion: '1.0',
+    apkLabel: "Télécharger l'APK",
+    apkEnabled: true,
+    apkDownloads: 0,
+    ownerNotificationEmail: '',
+    ownerNotificationWebhook: '',
+    adsTxtContent: '',
+    adNetworkHeadCode: '',
+  });
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
 
   // Push Notifications
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -143,10 +156,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   const loadAdminServerData = useCallback(async () => {
     try {
-      const [pushRes, partRes, trafficRes] = await Promise.all([
+      const [pushRes, partRes, trafficRes, configRes] = await Promise.all([
         fetch('/api/admin/push'),
         fetch('/api/admin/partnerships'),
         fetch('/api/traffic'),
+        fetch('/api/admin/app-config'),
       ]);
       if (pushRes.ok) {
         const pushData = await pushRes.json();
@@ -166,10 +180,41 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           setStats((prev) => ({ ...prev, ...tData.traffic }));
         }
       }
+      if (configRes.ok) {
+        const cData = await configRes.json();
+        if (cData.config) {
+          setAppConfig(cData.config);
+        }
+      }
     } catch {
       // ignore offline
     }
   }, []);
+
+  const handleSaveAppConfig = async (e?: React.FormEvent, successText = 'Paramètres enregistrés avec succès.') => {
+    if (e) e.preventDefault();
+    setIsSavingConfig(true);
+    setStatusBanner(null);
+    try {
+      const res = await fetch('/api/admin/app-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appConfig),
+      });
+      const data = await res.json();
+      if (res.ok && data.config) {
+        setAppConfig(data.config);
+        window.dispatchEvent(new Event('streamora-config-updated'));
+        setStatusBanner(successText);
+      } else {
+        setStatusBanner(data.error || 'Erreur lors de la sauvegarde.');
+      }
+    } catch {
+      setStatusBanner('Erreur réseau lors de la sauvegarde.');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/admin/session')
@@ -573,7 +618,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         {[
           { id: 'content' as AdminTab, label: `Films & Séries (${mediaList.length})`, icon: Film },
           { id: 'direct' as AdminTab, label: `Direct (${liveChannels.length})`, icon: Radio },
-          { id: 'ads' as AdminTab, label: `Publicités & Partenariats (${ads.length})`, icon: Megaphone },
+          {
+            id: 'ads' as AdminTab,
+            label: `Régies & Pubs (${ads.length}${partnerships.filter((p) => p.status === 'new').length > 0 ? ` · ${partnerships.filter((p) => p.status === 'new').length} dem.` : ''})`,
+            icon: Megaphone,
+          },
+          { id: 'apk' as AdminTab, label: `APK Android (${appConfig.apkDownloads})`, icon: Smartphone },
           { id: 'push' as AdminTab, label: `Notifications Push (${subscribersCount})`, icon: Bell },
           { id: 'traffic' as AdminTab, label: 'Analytique & SEO', icon: BarChart3 },
           { id: 'reports' as AdminTab, label: `Signalements (${reports.filter((r) => r.status === 'pending').length})`, icon: AlertCircle },
@@ -752,100 +802,180 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         </div>
       )}
 
-      {/* TAB 3: PUBLICITES & PARTENARIATS */}
+      {/* TAB 3: REGIES PUBLICITAIRES, BANNIERES & DEMANDES RECUES */}
       {activeTab === 'ads' && (
         <div className="space-y-8">
-          <div className="space-y-4">
-            <div className="bg-[#12101d] border border-emerald-500/30 rounded-2xl p-4 sm:p-5 space-y-2 text-xs">
-              <h2 className="text-sm font-bold text-emerald-300">
-                Encaisser 100 % de vos revenus publicitaires
-              </h2>
-              <p className="text-zinc-300 leading-relaxed">
-                Les exemples de démonstration ont été supprimés : aucune régie n’était connectée par défaut. Pour recevoir directement vos revenus, collez ci-dessous votre propre code <strong>Google AdSense</strong>, <strong>Adsterra</strong>, <strong>Monetag</strong>, <strong>PropellerAds</strong> ou un lien d’affiliation / sponsor direct payé sur votre propre compte.
-              </p>
+          {/* Global Ad Network Settings (Head code, ads.txt & Owner Inbox Email/Webhook) */}
+          <form
+            onSubmit={(e) => handleSaveAppConfig(e, 'Configuration régies publicitaires et réception e-mail enregistrée.')}
+            className="bg-[#12101d] border border-purple-900/35 rounded-2xl p-5 sm:p-6 space-y-4 text-xs"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-emerald-300">
+                  Régies Publicitaires (AdSense, Adsterra, Monetag) &amp; Réception directe chez vous
+                </h2>
+                <p className="text-zinc-400 mt-0.5">
+                  Configurez l’e-mail qui reçoit les demandes d’affichage, le fichier <code>/ads.txt</code> et le script global <code>&lt;head&gt;</code> de vos régies.
+                </p>
+              </div>
+              <button
+                type="submit"
+                disabled={isSavingConfig}
+                className="px-4 min-h-[38px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl shrink-0"
+              >
+                {isSavingConfig ? 'Enregistrement...' : 'Sauvegarder la configuration'}
+              </button>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-zinc-300 font-semibold block mb-1">
+                  Votre e-mail de réception des demandes pub (affiché &amp; alertes)
+                </label>
+                <input
+                  type="email"
+                  placeholder="richefranck0@gmail.com"
+                  value={appConfig.ownerNotificationEmail}
+                  onChange={(e) => setAppConfig({ ...appConfig, ownerNotificationEmail: e.target.value })}
+                  className="w-full bg-[#090810] border border-white/12 rounded-xl p-2.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-zinc-300 font-semibold block mb-1">
+                  Webhook instantané optionnel (Discord / Slack / Make / n8n)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://discord.com/api/webhooks/..."
+                  value={appConfig.ownerNotificationWebhook || ''}
+                  onChange={(e) => setAppConfig({ ...appConfig, ownerNotificationWebhook: e.target.value })}
+                  className="w-full bg-[#090810] border border-white/12 rounded-xl p-2.5 text-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-zinc-300 font-semibold block mb-1">
+                  Script global &lt;head&gt; des régies (ex: Google AdSense Auto Ads / validation)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={'<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXX" crossorigin="anonymous"></script>'}
+                  value={appConfig.adNetworkHeadCode}
+                  onChange={(e) => setAppConfig({ ...appConfig, adNetworkHeadCode: e.target.value })}
+                  className="w-full bg-[#090810] border border-white/12 rounded-xl p-2.5 text-emerald-300 font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-zinc-300 font-semibold block mb-1">
+                  Contenu officiel du fichier <code>/ads.txt</code>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={'google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0'}
+                  value={appConfig.adsTxtContent}
+                  onChange={(e) => setAppConfig({ ...appConfig, adsTxtContent: e.target.value })}
+                  className="w-full bg-[#090810] border border-white/12 rounded-xl p-2.5 text-purple-200 font-mono"
+                />
+              </div>
+            </div>
+          </form>
+
+          {/* Banners & Ad Units */}
+          <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-bold text-white">Campagnes Publicitaires &amp; Tags Régies</h2>
-                <p className="text-xs text-zinc-400">Collez un code HTML/Script officiel ou publiez une bannière sponsor directe.</p>
+                <h2 className="text-sm font-bold text-white">Bannières &amp; Emplacements Régies</h2>
+                <p className="text-xs text-zinc-400">
+                  Collez un code HTML/Script officiel (AdSense, Adsterra, Monetag) ou publiez une bannière sponsor directe.
+                </p>
               </div>
               <button
                 onClick={() => setShowAdForm(true)}
                 className="px-4 min-h-[40px] bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5"
               >
                 <Plus className="w-4 h-4" />
-                <span>Ajouter une régie / pub</span>
+                <span>Ajouter une régie / bannière</span>
               </button>
             </div>
 
-            <div className="space-y-3">
-              {ads.map((ad) => (
-                <div
-                  key={ad.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-[#12101d] border border-white/6"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {ad.imageUrl && (
-                      <img
-                        src={ad.imageUrl}
-                        alt={ad.title}
-                        className="w-16 h-12 object-cover rounded-lg shrink-0 border border-white/10"
-                      />
-                    )}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className={`font-bold uppercase text-[10px] ${ad.isActive ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                          {ad.isActive ? 'Active' : 'Pause'}
-                        </span>
-                        <span className="text-purple-300 font-semibold">{ad.clientName}</span>
-                        <span className="text-zinc-500">· {ad.placement}</span>
+            {ads.length === 0 ? (
+              <p className="text-xs text-zinc-400 bg-[#12101d] p-4 rounded-xl border border-white/6">
+                Aucune régie active pour le moment — les emplacements bannières affichent des zones réservables sur le site. Cliquez sur « Ajouter une régie / bannière » pour insérer vos codes.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {ads.map((ad) => (
+                  <div
+                    key={ad.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-[#12101d] border border-white/6"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {ad.imageUrl && (
+                        <img
+                          src={ad.imageUrl}
+                          alt={ad.title}
+                          className="w-16 h-12 object-cover rounded-lg shrink-0 border border-white/10"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className={`font-bold uppercase text-[10px] ${ad.isActive ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                            {ad.isActive ? 'Active' : 'Pause'}
+                          </span>
+                          <span className="text-purple-300 font-semibold">{ad.clientName}</span>
+                          <span className="text-zinc-500">· {ad.placement}</span>
+                        </div>
+                        <h3 className="text-sm font-semibold text-white truncate">{ad.title}</h3>
+                        {ad.targetUrl && (
+                          <a href={ad.targetUrl} target="_blank" rel="noreferrer" className="text-xs text-zinc-400 hover:text-purple-300 flex items-center gap-1 truncate">
+                            <span>{ad.targetUrl}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
                       </div>
-                      <h3 className="text-sm font-semibold text-white truncate">{ad.title}</h3>
-                      <a href={ad.targetUrl} target="_blank" rel="noreferrer" className="text-xs text-zinc-400 hover:text-purple-300 flex items-center gap-1 truncate">
-                        <span>{ad.targetUrl}</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-center text-xs">
+                      <div className="text-right text-zinc-400">
+                        <div><Eye className="w-3 h-3 inline mr-1" />{ad.impressions}</div>
+                        <div><MousePointerClick className="w-3 h-3 inline mr-1" />{ad.clicks}</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          storageService.updateAd({ ...ad, isActive: !ad.isActive });
+                          const next = storageService.getAds();
+                          setAds(next);
+                          syncAdsToServer(next);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white/8 hover:bg-white/15 text-white font-medium"
+                      >
+                        {ad.isActive ? 'Pause' : 'Activer'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          storageService.deleteAd(ad.id);
+                          const next = storageService.getAds();
+                          setAds(next);
+                          syncAdsToServer(next);
+                        }}
+                        className="p-2 rounded-lg bg-white/5 hover:bg-red-950/50 text-zinc-400 hover:text-red-300"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0 self-end sm:self-center text-xs">
-                    <div className="text-right text-zinc-400">
-                      <div><Eye className="w-3 h-3 inline mr-1" />{ad.impressions}</div>
-                      <div><MousePointerClick className="w-3 h-3 inline mr-1" />{ad.clicks}</div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        storageService.updateAd({ ...ad, isActive: !ad.isActive });
-                        const next = storageService.getAds();
-                        setAds(next);
-                        syncAdsToServer(next);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-white/8 hover:bg-white/15 text-white font-medium"
-                    >
-                      {ad.isActive ? 'Pause' : 'Activer'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        storageService.deleteAd(ad.id);
-                        const next = storageService.getAds();
-                        setAds(next);
-                        syncAdsToServer(next);
-                      }}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-red-950/50 text-zinc-400 hover:text-red-300"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Partnership Inquiries */}
+          {/* Partnership Inquiries Inbox */}
           <div className="space-y-3 pt-6 border-t border-white/8">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <Users className="w-4 h-4 text-purple-400" />
-              <span>Demandes reçues — Partenariat et publicité ({partnerships.length})</span>
+              <span>Boîte de réception — Demandes d’affichage pub ({partnerships.length})</span>
             </h2>
             {partnerships.length === 0 ? (
               <p className="text-xs text-zinc-400 bg-[#12101d] p-4 rounded-xl border border-white/6">
@@ -854,40 +984,160 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             ) : (
               <div className="space-y-2.5">
                 {partnerships.map((p) => (
-                  <div key={p.id} className="p-4 rounded-xl bg-[#12101d] border border-white/8 space-y-2 text-xs">
+                  <div key={p.id} className="p-4 rounded-xl bg-[#12101d] border border-white/8 space-y-2.5 text-xs">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <strong className="text-sm text-white">{p.companyName}</strong>
                         <span className="text-zinc-400 ml-2">({p.contactName} · {p.email})</span>
+                        <span className="text-zinc-500 ml-2 text-[11px]">
+                          {new Date(p.createdAt).toLocaleString('fr-FR')}
+                        </span>
                       </div>
-                      <button
-                        onClick={async () => {
-                          const nextStatus = p.status === 'new' ? 'reviewed' : 'new';
-                          await fetch(`/api/admin/partnerships/${p.id}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: nextStatus }),
-                          });
-                          loadAdminServerData();
-                        }}
-                        className={`px-2.5 py-1 rounded-lg font-semibold ${
-                          p.status === 'reviewed'
-                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-purple-950 text-purple-300 border border-purple-500/30'
-                        }`}
-                      >
-                        {p.status === 'reviewed' ? 'Traité' : 'Nouvelle demande'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`mailto:${p.email}?subject=${encodeURIComponent(`Re: Demande publicitaire STREAMORA — ${p.companyName}`)}`}
+                          className="px-2.5 py-1 rounded-lg bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/30 font-semibold inline-flex items-center gap-1"
+                        >
+                          <Mail className="w-3 h-3" />
+                          <span>Répondre</span>
+                        </a>
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(p.email)}
+                          className="p-1.5 rounded-lg bg-white/6 hover:bg-white/12 text-zinc-300"
+                          title="Copier l'e-mail"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const nextStatus = p.status === 'new' ? 'reviewed' : 'new';
+                            await fetch(`/api/admin/partnerships/${p.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ status: nextStatus }),
+                            });
+                            loadAdminServerData();
+                          }}
+                          className={`px-2.5 py-1 rounded-lg font-semibold ${
+                            p.status === 'reviewed'
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-amber-950 text-amber-300 border border-amber-500/30'
+                          }`}
+                        >
+                          {p.status === 'reviewed' ? 'Traité' : 'Nouvelle demande'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await fetch(`/api/admin/partnerships/${p.id}`, { method: 'DELETE' });
+                            loadAdminServerData();
+                          }}
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-red-950/50 text-zinc-400 hover:text-red-300"
+                          title="Supprimer la demande"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     {p.placementInterest && (
-                      <p className="text-purple-300">Format : {p.placementInterest}</p>
+                      <p className="text-purple-300">Format demandé : {p.placementInterest}</p>
                     )}
-                    <p className="text-zinc-300 leading-relaxed">{p.message}</p>
+                    <p className="text-zinc-200 leading-relaxed bg-black/25 p-3 rounded-lg border border-white/5">
+                      {p.message}
+                    </p>
                   </div>
                 ))}
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB: APK ANDROID & API DOWNLOAD LINK */}
+      {activeTab === 'apk' && (
+        <div className="space-y-6 max-w-2xl">
+          <form
+            onSubmit={(e) => handleSaveAppConfig(e, 'Lien APK Android mis à jour sur le site et l’API.')}
+            className="bg-[#12101d] border border-emerald-500/30 rounded-2xl p-6 space-y-4 text-xs"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white font-heading">
+                    Téléchargement Application Android (.apk)
+                  </h2>
+                  <p className="text-zinc-400">
+                    Définissez le lien direct vers votre fichier APK (hébergé sur GitHub Releases, Drive, CDN ou serveur).
+                  </p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-[10px] uppercase text-zinc-400 block">Téléchargements</span>
+                <span className="text-xl font-extrabold text-emerald-400 tabular-nums">{appConfig.apkDownloads}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-zinc-300 font-semibold block mb-1">
+                URL de téléchargement APK (API /api/app-config) *
+              </label>
+              <input
+                type="url"
+                placeholder="https://github.com/.../releases/latest/download/streamora.apk"
+                value={appConfig.apkUrl}
+                onChange={(e) => setAppConfig({ ...appConfig, apkUrl: e.target.value })}
+                className="w-full bg-[#090810] border border-white/12 rounded-xl p-3 text-emerald-300 font-mono"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-zinc-300 font-semibold block mb-1">Libellé du bouton</label>
+                <input
+                  type="text"
+                  placeholder="Télécharger l'APK"
+                  value={appConfig.apkLabel}
+                  onChange={(e) => setAppConfig({ ...appConfig, apkLabel: e.target.value })}
+                  className="w-full bg-[#090810] border border-white/12 rounded-xl p-3 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-zinc-300 font-semibold block mb-1">Version affichée</label>
+                <input
+                  type="text"
+                  placeholder="1.0"
+                  value={appConfig.apkVersion}
+                  onChange={(e) => setAppConfig({ ...appConfig, apkVersion: e.target.value })}
+                  className="w-full bg-[#090810] border border-white/12 rounded-xl p-3 text-white font-mono"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2.5 text-zinc-200 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={appConfig.apkEnabled}
+                onChange={(e) => setAppConfig({ ...appConfig, apkEnabled: e.target.checked })}
+                className="accent-emerald-500 w-4 h-4"
+              />
+              <span>Afficher le bouton « Télécharger l’APK » dans la barre de navigation et le pied de page</span>
+            </label>
+
+            <div className="pt-2 flex items-center justify-between gap-3">
+              <span className="text-[11px] font-mono text-zinc-500">
+                API : GET /api/app-config · PUT /api/admin/app-config
+              </span>
+              <button
+                type="submit"
+                disabled={isSavingConfig}
+                className="px-5 min-h-[42px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl"
+              >
+                {isSavingConfig ? 'Enregistrement...' : 'Enregistrer le lien APK'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

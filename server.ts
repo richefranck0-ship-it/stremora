@@ -68,6 +68,17 @@ interface StoreState {
   customMedia: any[];
   ads: any[] | null;
   liveChannels: any[];
+  appConfig: {
+    apkUrl: string;
+    apkVersion: string;
+    apkLabel: string;
+    apkEnabled: boolean;
+    apkDownloads: number;
+    ownerNotificationEmail: string;
+    ownerNotificationWebhook: string;
+    adsTxtContent: string;
+    adNetworkHeadCode: string;
+  };
   traffic: {
     totalVisitors: number;
     pageViews: number;
@@ -78,6 +89,44 @@ interface StoreState {
     devices: { mobile: number; tablet: number; desktop: number };
     languages: Record<string, number>;
     topRoutes: { path: string; views: number }[];
+  };
+}
+
+function createDefaultAppConfig() {
+  return {
+    apkUrl: process.env.APK_DOWNLOAD_URL || '',
+    apkVersion: '1.0',
+    apkLabel: "Télécharger l'APK",
+    apkEnabled: true,
+    apkDownloads: 0,
+    ownerNotificationEmail: process.env.ADMIN_EMAIL || '',
+    ownerNotificationWebhook: process.env.PARTNERSHIP_WEBHOOK_URL || '',
+    adsTxtContent: process.env.ADS_TXT_CONTENT || '',
+    adNetworkHeadCode: '',
+  };
+}
+
+function normalizeAppConfig(raw: any) {
+  const defaults = createDefaultAppConfig();
+  if (!raw || typeof raw !== 'object') return defaults;
+  return {
+    apkUrl: typeof raw.apkUrl === 'string' ? raw.apkUrl : defaults.apkUrl,
+    apkVersion: typeof raw.apkVersion === 'string' && raw.apkVersion ? raw.apkVersion : defaults.apkVersion,
+    apkLabel: typeof raw.apkLabel === 'string' && raw.apkLabel ? raw.apkLabel : defaults.apkLabel,
+    apkEnabled: typeof raw.apkEnabled === 'boolean' ? raw.apkEnabled : defaults.apkEnabled,
+    apkDownloads: Number(raw.apkDownloads || 0),
+    ownerNotificationEmail:
+      typeof raw.ownerNotificationEmail === 'string'
+        ? raw.ownerNotificationEmail
+        : defaults.ownerNotificationEmail,
+    ownerNotificationWebhook:
+      typeof raw.ownerNotificationWebhook === 'string'
+        ? raw.ownerNotificationWebhook
+        : defaults.ownerNotificationWebhook,
+    adsTxtContent:
+      typeof raw.adsTxtContent === 'string' ? raw.adsTxtContent : defaults.adsTxtContent,
+    adNetworkHeadCode:
+      typeof raw.adNetworkHeadCode === 'string' ? raw.adNetworkHeadCode : defaults.adNetworkHeadCode,
   };
 }
 
@@ -136,6 +185,7 @@ function loadStore(): StoreState {
           customMedia: Array.isArray(parsed.customMedia) ? parsed.customMedia : [],
           ads: Array.isArray(parsed.ads) ? parsed.ads : null,
           liveChannels: Array.isArray(parsed.liveChannels) ? parsed.liveChannels : [],
+          appConfig: normalizeAppConfig(parsed.appConfig),
           traffic: normalizeTraffic(parsed.traffic),
           vapid: parsed.vapid,
           sessionSecret: parsed.sessionSecret || crypto.randomBytes(32).toString('hex'),
@@ -162,6 +212,7 @@ function loadStore(): StoreState {
     customMedia: [],
     ads: null,
     liveChannels: [],
+    appConfig: createDefaultAppConfig(),
     traffic: createEmptyTraffic(),
   };
   fs.writeFileSync(STORE_PATH, JSON.stringify(initialStore, null, 2));
@@ -863,7 +914,10 @@ function injectSsrMetaIntoHtml(html: string, meta: SsrMeta): string {
     `<link rel="canonical" href="${safeUrl}" />`,
     ...hreflangTags,
     `<meta property="og:url" content="${safeUrl}" />`,
-  ].join('\n    ');
+    !meta.noindex && store.appConfig?.adNetworkHeadCode ? store.appConfig.adNetworkHeadCode : '',
+  ]
+    .filter(Boolean)
+    .join('\n    ');
 
   updated = updated.replace('</head>', `    ${extraHeadTags}\n  </head>`);
   return updated;
@@ -1132,8 +1186,66 @@ async function startServer() {
     });
   });
 
+  // --- App Config API (APK Download Link, Owner Ad Inbox Config, Ad Networks) ---
+  app.get('/api/app-config', (_req, res) => {
+    const cfg = normalizeAppConfig(store.appConfig);
+    res.json({
+      apkUrl: process.env.APK_DOWNLOAD_URL || cfg.apkUrl,
+      apkVersion: cfg.apkVersion,
+      apkLabel: cfg.apkLabel,
+      apkEnabled: cfg.apkEnabled,
+      apkDownloads: cfg.apkDownloads,
+      contactEmail: cfg.ownerNotificationEmail || '',
+    });
+  });
+
+  app.post('/api/app-config/apk-download', (_req, res) => {
+    store.appConfig = normalizeAppConfig(store.appConfig);
+    store.appConfig.apkDownloads += 1;
+    saveStore();
+    res.json({ ok: true, apkDownloads: store.appConfig.apkDownloads });
+  });
+
+  app.get('/api/admin/app-config', requireAdmin, (_req, res) => {
+    res.json({ config: normalizeAppConfig(store.appConfig) });
+  });
+
+  app.put('/api/admin/app-config', requireAdmin, (req, res) => {
+    const current = normalizeAppConfig(store.appConfig);
+    const body = req.body || {};
+    store.appConfig = {
+      apkUrl: typeof body.apkUrl === 'string' ? body.apkUrl.trim() : current.apkUrl,
+      apkVersion: typeof body.apkVersion === 'string' && body.apkVersion.trim() ? body.apkVersion.trim() : current.apkVersion,
+      apkLabel: typeof body.apkLabel === 'string' && body.apkLabel.trim() ? body.apkLabel.trim() : current.apkLabel,
+      apkEnabled: typeof body.apkEnabled === 'boolean' ? body.apkEnabled : current.apkEnabled,
+      apkDownloads: current.apkDownloads,
+      ownerNotificationEmail:
+        typeof body.ownerNotificationEmail === 'string'
+          ? body.ownerNotificationEmail.trim()
+          : current.ownerNotificationEmail,
+      ownerNotificationWebhook:
+        typeof body.ownerNotificationWebhook === 'string'
+          ? body.ownerNotificationWebhook.trim()
+          : current.ownerNotificationWebhook,
+      adsTxtContent:
+        typeof body.adsTxtContent === 'string' ? body.adsTxtContent : current.adsTxtContent,
+      adNetworkHeadCode:
+        typeof body.adNetworkHeadCode === 'string' ? body.adNetworkHeadCode : current.adNetworkHeadCode,
+    };
+    saveStore();
+    res.json({ ok: true, config: store.appConfig });
+  });
+
+  app.get('/ads.txt', (_req, res) => {
+    const cfg = normalizeAppConfig(store.appConfig);
+    const txt =
+      (cfg.adsTxtContent || process.env.ADS_TXT_CONTENT || '').trim() ||
+      '# STREAMORA ads.txt — Configurez vos lignes Google AdSense / Adsterra dans /admin\n';
+    res.type('text/plain').send(txt);
+  });
+
   // --- Partnerships ("Partenariat et publicité") ---
-  app.post('/api/partnerships', (req, res) => {
+  app.post('/api/partnerships', async (req, res) => {
     const companyName = String(req.body?.companyName || '').trim();
     const contactName = String(req.body?.contactName || '').trim();
     const email = String(req.body?.email || '').trim();
@@ -1156,7 +1268,60 @@ async function startServer() {
     };
     store.partnerships.unshift(item);
     saveStore();
-    res.json({ ok: true, id: item.id });
+
+    const cfg = normalizeAppConfig(store.appConfig);
+    let forwarded = false;
+
+    // Optional instant webhook notification to owner (Discord/Slack/Make/Zapier/n8n)
+    if (cfg.ownerNotificationWebhook) {
+      try {
+        await fetch(cfg.ownerNotificationWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'streamora_ad_request',
+            content: `📢 Nouvelle demande publicitaire STREAMORA de **${item.companyName}** (${item.email})\nFormat: ${item.placementInterest || 'Non précisé'}\nMessage: ${item.message}`,
+            inquiry: item,
+          }),
+        });
+        forwarded = true;
+      } catch {
+        // Non-blocking webhook error
+      }
+    }
+
+    // Optional real email notification via Resend if RESEND_API_KEY + owner email configured
+    if (process.env.RESEND_API_KEY && cfg.ownerNotificationEmail) {
+      try {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: process.env.RESEND_FROM_EMAIL || 'STREAMORA <onboarding@resend.dev>',
+            to: [cfg.ownerNotificationEmail],
+            reply_to: item.email,
+            subject: `[STREAMORA Pub] Nouvelle demande de ${item.companyName}`,
+            text: [
+              `Entreprise : ${item.companyName}`,
+              `Contact : ${item.contactName}`,
+              `E-mail : ${item.email}`,
+              `Format souhaité : ${item.placementInterest || 'Non précisé'}`,
+              '',
+              'Message :',
+              item.message,
+            ].join('\n'),
+          }),
+        });
+        forwarded = true;
+      } catch {
+        // Non-blocking email error
+      }
+    }
+
+    res.json({ ok: true, id: item.id, forwarded });
   });
 
   app.get('/api/admin/partnerships', requireAdmin, (_req, res) => {
@@ -1167,6 +1332,13 @@ async function startServer() {
     const { id } = req.params;
     const status = req.body?.status === 'reviewed' ? 'reviewed' : 'new';
     store.partnerships = store.partnerships.map((p) => (p.id === id ? { ...p, status } : p));
+    saveStore();
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/admin/partnerships/:id', requireAdmin, (req, res) => {
+    const { id } = req.params;
+    store.partnerships = store.partnerships.filter((p) => p.id !== id);
     saveStore();
     res.json({ ok: true });
   });
@@ -1437,7 +1609,7 @@ async function startServer() {
     app.use(vite.middlewares);
 
     app.use(async (req, res, next) => {
-      if (req.method !== 'GET' || req.path.startsWith('/api/')) {
+      if ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/')) {
         next();
         return;
       }
@@ -1463,7 +1635,7 @@ async function startServer() {
     app.use(express.static(distDir, { index: false }));
 
     app.use(async (req, res, next) => {
-      if (req.method !== 'GET' || req.path.startsWith('/api/')) {
+      if ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/')) {
         next();
         return;
       }

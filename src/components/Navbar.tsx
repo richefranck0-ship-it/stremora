@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { ActiveTab, UserProfile } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import { ApkDownloadButton } from './ApkDownloadButton';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 
 interface NavbarProps {
@@ -136,6 +137,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            <ApkDownloadButton variant="compact" />
             <PWAInstallButton compact />
 
             <button
@@ -207,6 +209,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-xs text-purple-300 font-mono">{user.watchlist.length}</span>
               )}
             </button>
+
+            <div className="pt-2 border-t border-white/8">
+              <ApkDownloadButton variant="drawer" />
+            </div>
           </div>
         )}
       </header>

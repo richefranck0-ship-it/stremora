@@ -15,17 +15,37 @@ const HtmlAdScriptContainer: React.FC<{ htmlCode: string }> = ({ htmlCode }) => 
     const el = containerRef.current;
     if (!el || !htmlCode.trim()) return;
     el.innerHTML = '';
-    try {
-      const range = document.createRange();
-      range.selectNode(el);
-      const fragment = range.createContextualFragment(htmlCode);
-      el.appendChild(fragment);
-    } catch {
-      el.innerHTML = htmlCode;
-    }
+
+    const temp = document.createElement('div');
+    temp.innerHTML = htmlCode;
+
+    Array.from(temp.childNodes).forEach((node) => {
+      if (node.nodeName.toUpperCase() === 'SCRIPT') {
+        const orig = node as HTMLScriptElement;
+        const script = document.createElement('script');
+        Array.from(orig.attributes).forEach((attr) => script.setAttribute(attr.name, attr.value));
+        if (orig.textContent) {
+          script.textContent = orig.textContent;
+        }
+        el.appendChild(script);
+      } else {
+        el.appendChild(node.cloneNode(true));
+      }
+    });
   }, [htmlCode]);
 
-  return <div ref={containerRef} className="w-full flex items-center justify-center overflow-hidden" />;
+  return <div ref={containerRef} className="w-full min-h-[90px] flex items-center justify-center overflow-hidden" />;
+};
+
+const PLACEMENT_DIMENSIONS: Record<AdPlacement, { label: string; sizeHint: string }> = {
+  header_bar: { label: 'Bannière En-Tête', sizeHint: '728×90 / 320×50' },
+  sub_hero: { label: 'Bannière Leaderboard', sizeHint: '728×90 · Mobile 320×100' },
+  in_feed: { label: 'Bannière In-Feed Catalogue', sizeHint: '728×90 / 970×90 · Mobile 320×100' },
+  under_player: { label: 'Bannière Sous Lecteur Vidéo', sizeHint: '728×90 / 468×60' },
+  direct_feed: { label: 'Bannière Page Direct Live', sizeHint: '728×90 / 300×250' },
+  detail_modal: { label: 'Bannière Fiche Détail', sizeHint: '728×90 / 300×250' },
+  sidebar: { label: 'Bannière Latérale Rectangle', sizeHint: '300×250 / 300×600' },
+  footer_network: { label: 'Bannière Réseau Bas de Page', sizeHint: '728×90 / 300×250' },
 };
 
 export const AdBannerSlot: React.FC<AdBannerSlotProps> = ({ placement, className = '' }) => {
@@ -50,7 +70,42 @@ export const AdBannerSlot: React.FC<AdBannerSlotProps> = ({ placement, className
     return () => window.removeEventListener('streamora-ads-updated', handleAdsUpdated);
   }, [placement]);
 
-  if (!ad || dismissed) return null;
+  if (dismissed) return null;
+
+  if (!ad) {
+    if (placement === 'header_bar') return null;
+    const meta = PLACEMENT_DIMENSIONS[placement] || { label: 'Bannière Publicitaire', sizeHint: '728×90' };
+    return (
+      <aside
+        aria-label={`Emplacement publicitaire ${meta.label}`}
+        className={`w-full my-4 rounded-2xl bg-[#0e0c18]/90 border border-dashed border-purple-500/25 px-4 py-4 sm:py-5 flex flex-col sm:flex-row items-center justify-between gap-3 ${className}`}
+      >
+        <div className="flex items-center gap-3 min-w-0 text-center sm:text-left">
+          <div className="hidden sm:flex w-10 h-10 rounded-xl bg-purple-600/15 border border-purple-500/30 items-center justify-center text-purple-300 shrink-0">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center justify-center sm:justify-start gap-2 text-[10px] uppercase tracking-wider font-bold text-purple-300">
+              <span>Publicité · {meta.label}</span>
+              <span className="text-zinc-500 font-mono">({meta.sizeHint})</span>
+            </div>
+            <p className="text-xs text-zinc-400 mt-0.5 truncate">
+              Emplacement prêt pour Google AdSense, Adsterra, Monetag ou annonceur direct.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('streamora-navigate', { detail: 'partenariat' }));
+          }}
+          className="px-4 min-h-[36px] rounded-xl bg-purple-600/20 hover:bg-purple-600/35 border border-purple-500/35 text-purple-200 text-xs font-semibold whitespace-nowrap transition-colors shrink-0"
+        >
+          Annoncer ici
+        </button>
+      </aside>
+    );
+  }
 
   const handleClick = () => {
     storageService.recordAdClick(ad.id);

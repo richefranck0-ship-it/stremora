@@ -130,14 +130,40 @@ export const AdNetworkBanners: React.FC<AdNetworkBannersProps> = ({
             </div>
           )
         ) : (
-          <div className="p-6 text-center bg-black/35 rounded-2xl border border-dashed border-white/10 space-y-2.5">
-            <ShieldCheck className="w-8 h-8 text-purple-400 mx-auto" />
-            <h4 className="text-sm font-bold text-white">
-              Emplacements publicitaires disponibles pour vos partenaires
-            </h4>
-            <p className="text-xs text-zinc-400 max-w-lg mx-auto">
-              Aucune régie publicitaire n’est encore connectée ici. Les annonceurs intéressés peuvent contacter l’éditeur via la page Partenariat et publicité.
-            </p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div
+              onClick={() => onOpenPartnership?.()}
+              className="lg:col-span-2 min-h-[110px] p-5 rounded-2xl bg-black/40 border border-dashed border-purple-500/30 hover:border-purple-400/60 flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer transition-colors"
+            >
+              <div className="flex items-center gap-3 text-center sm:text-left">
+                <ShieldCheck className="w-8 h-8 text-purple-400 shrink-0" />
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">
+                    Bannière Leaderboard · 728×90 / Mobile 320×100
+                  </span>
+                  <h4 className="text-sm font-bold text-white mt-0.5">
+                    Zone Régie Google AdSense, Adsterra, Monetag ou Bannière Sponsor
+                  </h4>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Les demandes de diffusion sont transmises directement au propriétaire du site.
+                  </p>
+                </div>
+              </div>
+              <span className="px-3.5 py-2 rounded-xl bg-purple-600/25 text-purple-200 text-xs font-semibold whitespace-nowrap shrink-0">
+                Réserver
+              </span>
+            </div>
+
+            <div
+              onClick={() => onOpenPartnership?.()}
+              className="min-h-[110px] p-5 rounded-2xl bg-black/40 border border-dashed border-purple-500/30 hover:border-purple-400/60 flex flex-col justify-center items-center text-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">
+                Pavé / Native · 300×250
+              </span>
+              <p className="text-xs font-semibold text-white">Emplacement Partenaire Direct</p>
+              <span className="text-[11px] text-zinc-400">Envoyer une demande d’affichage →</span>
+            </div>
           </div>
         )}
       </div>
