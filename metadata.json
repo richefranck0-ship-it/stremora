@@ -1,0 +1,6 @@
+{
+  "name": "STREAMORA - Films & Séries en Streaming",
+  "description": "Plateforme moderne de streaming cinématographique pour films et séries, nouveautés et classiques, avec lecteur vidéo haute définition et espace administrateur.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
