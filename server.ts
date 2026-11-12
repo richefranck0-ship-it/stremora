@@ -537,15 +537,33 @@ async function resolveSsrMeta(req: Request): Promise<SsrMeta> {
     locale,
     jsonLd: {
       '@context': 'https://schema.org',
-      '@type': 'WebSite',
-      name: 'STREAMORA',
-      url: origin,
-      inLanguage: ['fr-FR', 'en-US', 'es-ES', 'de-DE', 'pt-PT', 'ar-SA'],
-      potentialAction: {
-        '@type': 'SearchAction',
-        target: `${origin}/?q={search_term_string}`,
-        'query-input': 'required name=search_term_string',
-      },
+      '@graph': [
+        {
+          '@type': 'Organization',
+          '@id': `${origin}/#organization`,
+          name: 'STREAMORA',
+          url: origin,
+          logo: {
+            '@type': 'ImageObject',
+            url: `${origin}/pwa-512x512.png`,
+            width: 512,
+            height: 512,
+          },
+        },
+        {
+          '@type': 'WebSite',
+          '@id': `${origin}/#website`,
+          name: 'STREAMORA',
+          url: origin,
+          publisher: { '@id': `${origin}/#organization` },
+          inLanguage: ['fr-FR', 'en-US', 'es-ES', 'de-DE', 'pt-PT', 'ar-SA'],
+          potentialAction: {
+            '@type': 'SearchAction',
+            target: `${origin}/?q={search_term_string}`,
+            'query-input': 'required name=search_term_string',
+          },
+        },
+      ],
     },
   };
 

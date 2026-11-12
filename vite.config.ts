@@ -20,6 +20,10 @@ export default defineConfig(() => {
           type: 'module',
         },
         includeAssets: [
+          'favicon.ico',
+          'favicon-48x48.png',
+          'favicon-96x96.png',
+          'favicon-144x144.png',
           'icon.svg',
           'apple-touch-icon.png',
           'pwa-192x192.png',
